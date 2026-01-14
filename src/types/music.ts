@@ -8,6 +8,7 @@ export interface Track {
   playCount: number;
   lastPlayed?: Date;
   totalListenTime: number; // in seconds
+  audioUrl?: string; // blob URL for web playback
 }
 
 export interface Playlist {
