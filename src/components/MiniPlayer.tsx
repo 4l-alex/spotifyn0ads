@@ -1,7 +1,6 @@
 import { motion } from 'framer-motion';
 import { Play, Pause, SkipForward } from 'lucide-react';
 import { usePlayer } from '@/contexts/PlayerContext';
-import { formatDuration } from '@/data/mockData';
 
 export const MiniPlayer = () => {
   const { 
@@ -36,7 +35,7 @@ export const MiniPlayer = () => {
         <motion.img
           src={currentTrack.coverUrl}
           alt={currentTrack.album}
-          className="w-12 h-12 rounded-lg object-cover"
+          className="w-12 h-12 rounded-lg object-cover bg-muted"
           whileTap={{ scale: 0.95 }}
         />
 

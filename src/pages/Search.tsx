@@ -1,21 +1,44 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search as SearchIcon, X, Music, Mic2, Disc3, Users } from 'lucide-react';
-import { mockTracks, mockAlbums, mockArtists } from '@/data/mockData';
+import { Search as SearchIcon, X, Music, Plus } from 'lucide-react';
 import { TrackItem } from '@/components/TrackItem';
-
-const categories = [
-  { id: 'pop', name: 'Pop', color: 'from-pink-500 to-rose-600', icon: Music },
-  { id: 'rock', name: 'Rock', color: 'from-red-500 to-orange-600', icon: Mic2 },
-  { id: 'hiphop', name: 'Hip Hop', color: 'from-purple-500 to-violet-600', icon: Disc3 },
-  { id: 'jazz', name: 'Jazz', color: 'from-amber-500 to-yellow-600', icon: Users },
-  { id: 'electronic', name: 'Elettronica', color: 'from-cyan-500 to-blue-600', icon: Disc3 },
-  { id: 'classical', name: 'Classica', color: 'from-emerald-500 to-teal-600', icon: Music },
-];
+import { useMusicLibrary } from '@/hooks/useMusicLibrary';
+import { useNavigate } from 'react-router-dom';
 
 export const Search = () => {
   const [query, setQuery] = useState('');
-  const [isFocused, setIsFocused] = useState(false);
+  const { tracks } = useMusicLibrary();
+  const navigate = useNavigate();
+
+  // Extract unique albums and artists from tracks
+  const albums = useMemo(() => {
+    return tracks.reduce((acc, track) => {
+      const existing = acc.find(a => a.name === track.album && a.artist === track.artist);
+      if (!existing) {
+        acc.push({
+          id: `album_${track.album}_${track.artist}`,
+          name: track.album,
+          artist: track.artist,
+          coverUrl: track.coverUrl,
+        });
+      }
+      return acc;
+    }, [] as { id: string; name: string; artist: string; coverUrl: string }[]);
+  }, [tracks]);
+
+  const artists = useMemo(() => {
+    return tracks.reduce((acc, track) => {
+      const existing = acc.find(a => a.name === track.artist);
+      if (!existing) {
+        acc.push({
+          id: `artist_${track.artist}`,
+          name: track.artist,
+          imageUrl: track.coverUrl,
+        });
+      }
+      return acc;
+    }, [] as { id: string; name: string; imageUrl: string }[]);
+  }, [tracks]);
 
   const searchResults = useMemo(() => {
     if (!query.trim()) return { tracks: [], albums: [], artists: [] };
@@ -23,27 +46,64 @@ export const Search = () => {
     const lowerQuery = query.toLowerCase();
     
     return {
-      tracks: mockTracks.filter(
+      tracks: tracks.filter(
         (t) =>
           t.title.toLowerCase().includes(lowerQuery) ||
           t.artist.toLowerCase().includes(lowerQuery) ||
           t.album.toLowerCase().includes(lowerQuery)
       ),
-      albums: mockAlbums.filter(
+      albums: albums.filter(
         (a) =>
           a.name.toLowerCase().includes(lowerQuery) ||
           a.artist.toLowerCase().includes(lowerQuery)
       ),
-      artists: mockArtists.filter((a) =>
+      artists: artists.filter((a) =>
         a.name.toLowerCase().includes(lowerQuery)
       ),
     };
-  }, [query]);
+  }, [query, tracks, albums, artists]);
 
   const hasResults =
     searchResults.tracks.length > 0 ||
     searchResults.albums.length > 0 ||
     searchResults.artists.length > 0;
+
+  // Empty state when no tracks
+  if (tracks.length === 0) {
+    return (
+      <div className="min-h-screen pb-36 safe-top flex flex-col">
+        <header className="sticky top-0 z-20 bg-background/95 backdrop-blur-xl pt-6 pb-4 px-4">
+          <h1 className="text-2xl font-bold text-foreground mb-4">Cerca</h1>
+        </header>
+
+        <main className="flex-1 flex flex-col items-center justify-center px-8 text-center">
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="w-24 h-24 rounded-full bg-muted flex items-center justify-center mb-6"
+          >
+            <SearchIcon size={48} className="text-muted-foreground" />
+          </motion.div>
+          
+          <h2 className="text-xl font-bold text-foreground mb-2">
+            Nessun brano da cercare
+          </h2>
+          <p className="text-muted-foreground mb-8 max-w-xs">
+            Aggiungi i tuoi file MP3 per poterli cercare
+          </p>
+          
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={() => navigate('/settings')}
+            className="spotify-button flex items-center gap-2"
+          >
+            <Plus size={20} />
+            Aggiungi brani
+          </motion.button>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen pb-36 safe-top">
@@ -60,8 +120,6 @@ export const Search = () => {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onFocus={() => setIsFocused(true)}
-            onBlur={() => setIsFocused(false)}
             placeholder="Brani, artisti o album"
             className="search-input w-full pl-12 pr-10"
           />
@@ -106,7 +164,7 @@ export const Search = () => {
                             <img
                               src={artist.imageUrl}
                               alt={artist.name}
-                              className="w-24 h-24 rounded-full object-cover"
+                              className="w-24 h-24 rounded-full object-cover bg-muted"
                             />
                             <span className="text-sm font-medium text-foreground">
                               {artist.name}
@@ -131,7 +189,7 @@ export const Search = () => {
                             <img
                               src={album.coverUrl}
                               alt={album.name}
-                              className="w-32 h-32 rounded-xl object-cover mb-2"
+                              className="w-32 h-32 rounded-xl object-cover mb-2 bg-muted"
                             />
                             <p className="text-sm font-medium text-foreground truncate">
                               {album.name}
@@ -171,31 +229,21 @@ export const Search = () => {
             </motion.div>
           ) : (
             <motion.div
-              key="categories"
+              key="browse"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
             >
-              <h2 className="section-title">Esplora per genere</h2>
-              <div className="grid grid-cols-2 gap-3">
-                {categories.map((category) => {
-                  const Icon = category.icon;
-                  return (
-                    <motion.div
-                      key={category.id}
-                      whileTap={{ scale: 0.95 }}
-                      className={`relative h-24 rounded-xl bg-gradient-to-br ${category.color} overflow-hidden cursor-pointer`}
-                    >
-                      <span className="absolute left-4 top-4 text-lg font-bold text-white">
-                        {category.name}
-                      </span>
-                      <Icon 
-                        size={60} 
-                        className="absolute -right-2 -bottom-2 text-white/20 rotate-12" 
-                      />
-                    </motion.div>
-                  );
-                })}
+              <h2 className="section-title">Sfoglia la libreria</h2>
+              <p className="text-muted-foreground text-sm mb-6">
+                {tracks.length} brani disponibili
+              </p>
+              
+              {/* Show first few tracks as suggestions */}
+              <div className="space-y-1">
+                {tracks.slice(0, 8).map((track) => (
+                  <TrackItem key={track.id} track={track} />
+                ))}
               </div>
             </motion.div>
           )}
