@@ -14,10 +14,14 @@ import {
   Clock,
   TrendingUp,
   AlertTriangle,
-  Camera
+  Camera,
+  FolderSearch,
+  Smartphone,
+  RefreshCw
 } from 'lucide-react';
-import { mockTracks, mockPlaylists, formatListenTime } from '@/data/mockData';
+import { formatListenTime } from '@/data/mockData';
 import { Switch } from '@/components/ui/switch';
+import { Progress } from '@/components/ui/progress';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,23 +32,43 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { useMusicLibrary } from '@/hooks/useMusicLibrary';
+import { isNative, platform } from '@/services/nativeAudio';
 
 export const Settings = () => {
   const [darkMode, setDarkMode] = useState(true);
   const [showStats, setShowStats] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [profileName, setProfileName] = useState('Utente');
   const [isEditingName, setIsEditingName] = useState(false);
 
-  // Calculate stats
-  const totalTracks = mockTracks.length;
-  const totalPlaylists = mockPlaylists.length;
-  const totalListenTime = mockTracks.reduce((acc, t) => acc + t.totalListenTime, 0);
-  const storageUsed = totalTracks * 4.2; // ~4.2 MB per track average
+  const {
+    tracks,
+    playlists,
+    userProfile,
+    isScanning,
+    scanProgress,
+    scanForMusic,
+    updateUserProfile,
+    canChangeName,
+    daysUntilNameChange,
+    deleteAllTracks,
+    getListeningStats,
+  } = useMusicLibrary();
 
-  const topTracks = [...mockTracks]
-    .sort((a, b) => b.playCount - a.playCount)
-    .slice(0, 5);
+  const stats = getListeningStats();
+  const storageUsedMB = stats.storageUsed / (1024 * 1024);
+
+  const handleDeleteAll = async () => {
+    await deleteAllTracks();
+    setShowDeleteDialog(false);
+  };
+
+  const handleNameChange = async (newName: string) => {
+    if (canChangeName()) {
+      await updateUserProfile({ name: newName });
+    }
+    setIsEditingName(false);
+  };
 
   return (
     <div className="min-h-screen pb-36 safe-top">
@@ -58,8 +82,16 @@ export const Settings = () => {
         <section className="bg-card rounded-2xl overflow-hidden">
           <div className="p-4 flex items-center gap-4">
             <div className="relative">
-              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
-                <User size={32} className="text-muted-foreground" />
+              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center overflow-hidden">
+                {userProfile?.imageUrl ? (
+                  <img 
+                    src={userProfile.imageUrl} 
+                    alt="Profile" 
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <User size={32} className="text-muted-foreground" />
+                )}
               </div>
               <motion.button
                 whileTap={{ scale: 0.9 }}
@@ -69,31 +101,94 @@ export const Settings = () => {
               </motion.button>
             </div>
             <div className="flex-1">
-              {isEditingName ? (
+              {isEditingName && canChangeName() ? (
                 <input
                   type="text"
-                  value={profileName}
-                  onChange={(e) => setProfileName(e.target.value)}
-                  onBlur={() => setIsEditingName(false)}
-                  onKeyDown={(e) => e.key === 'Enter' && setIsEditingName(false)}
+                  defaultValue={userProfile?.name || 'Utente'}
+                  onBlur={(e) => handleNameChange(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleNameChange((e.target as HTMLInputElement).value)}
                   className="bg-muted rounded-lg px-3 py-1 text-lg font-semibold text-foreground w-full"
                   autoFocus
                 />
               ) : (
                 <motion.button
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => setIsEditingName(true)}
+                  onClick={() => canChangeName() && setIsEditingName(true)}
                   className="text-left"
                 >
-                  <p className="text-lg font-semibold text-foreground">{profileName}</p>
-                  <p className="text-sm text-muted-foreground">Tocca per modificare</p>
+                  <p className="text-lg font-semibold text-foreground">
+                    {userProfile?.name || 'Utente'}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {canChangeName() ? 'Tocca per modificare' : `Modifica bloccata`}
+                  </p>
                 </motion.button>
               )}
             </div>
           </div>
-          <p className="px-4 pb-4 text-xs text-muted-foreground">
-            Prossima modifica disponibile tra 14 giorni
-          </p>
+          {!canChangeName() && (
+            <p className="px-4 pb-4 text-xs text-muted-foreground">
+              Prossima modifica disponibile tra {daysUntilNameChange()} giorni
+            </p>
+          )}
+        </section>
+
+        {/* Music Scanning - Only show on native */}
+        <section>
+          <div className="flex items-center gap-2 mb-3">
+            <FolderSearch size={18} className="text-primary" />
+            <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider">
+              Scansione Musica
+            </h2>
+          </div>
+          <div className="bg-card rounded-2xl overflow-hidden">
+            <div className="p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <Smartphone size={20} className="text-muted-foreground" />
+                <div className="flex-1">
+                  <p className="text-sm text-foreground">
+                    {isNative 
+                      ? `Piattaforma: ${platform === 'android' ? 'Android' : 'iOS'}`
+                      : 'Modalità Web (Demo)'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {isNative 
+                      ? 'Scansiona le cartelle Music, Download e Documents'
+                      : 'Installa l\'app nativa per accedere ai file MP3'}
+                  </p>
+                </div>
+              </div>
+
+              {isScanning && (
+                <div className="mb-4">
+                  <Progress value={scanProgress} className="h-2" />
+                  <p className="text-xs text-muted-foreground mt-2 text-center">
+                    Scansione in corso... {Math.round(scanProgress)}%
+                  </p>
+                </div>
+              )}
+
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                onClick={scanForMusic}
+                disabled={isScanning || !isNative}
+                className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-semibold transition-colors ${
+                  isNative 
+                    ? 'bg-primary text-primary-foreground' 
+                    : 'bg-muted text-muted-foreground cursor-not-allowed'
+                }`}
+              >
+                <RefreshCw size={18} className={isScanning ? 'animate-spin' : ''} />
+                {isScanning ? 'Scansione...' : 'Scansiona file MP3'}
+              </motion.button>
+
+              {!isNative && (
+                <p className="text-xs text-muted-foreground mt-3 text-center">
+                  Per utilizzare questa funzione, esporta il progetto su GitHub e compila con Capacitor
+                </p>
+              )}
+            </div>
+          </div>
         </section>
 
         {/* Appearance */}
@@ -153,24 +248,24 @@ export const Settings = () => {
                     <div className="stat-card">
                       <HardDrive size={20} className="text-primary mb-2" />
                       <p className="text-2xl font-bold text-foreground">
-                        {storageUsed.toFixed(1)} MB
+                        {storageUsedMB.toFixed(1)} MB
                       </p>
                       <p className="text-xs text-muted-foreground">Spazio occupato</p>
                     </div>
                     <div className="stat-card">
                       <Music size={20} className="text-primary mb-2" />
-                      <p className="text-2xl font-bold text-foreground">{totalTracks}</p>
+                      <p className="text-2xl font-bold text-foreground">{stats.totalTracks}</p>
                       <p className="text-xs text-muted-foreground">Brani totali</p>
                     </div>
                     <div className="stat-card">
                       <ListMusic size={20} className="text-primary mb-2" />
-                      <p className="text-2xl font-bold text-foreground">{totalPlaylists}</p>
+                      <p className="text-2xl font-bold text-foreground">{stats.totalPlaylists}</p>
                       <p className="text-xs text-muted-foreground">Playlist</p>
                     </div>
                     <div className="stat-card">
                       <Clock size={20} className="text-primary mb-2" />
                       <p className="text-2xl font-bold text-foreground">
-                        {formatListenTime(totalListenTime)}
+                        {formatListenTime(stats.totalListenTime)}
                       </p>
                       <p className="text-xs text-muted-foreground">Tempo di ascolto</p>
                     </div>
@@ -185,7 +280,7 @@ export const Settings = () => {
                       </span>
                     </div>
                     <div className="space-y-2">
-                      {topTracks.map((track, index) => (
+                      {stats.topTracks.slice(0, 5).map((track, index) => (
                         <div
                           key={track.id}
                           className="flex items-center gap-3 py-2"
@@ -245,6 +340,11 @@ export const Settings = () => {
           <p className="text-xs text-muted-foreground mt-1">
             Nessuna pubblicità • Completamente offline
           </p>
+          {isNative && (
+            <p className="text-xs text-primary mt-2">
+              ✓ Capacitor attivo su {platform}
+            </p>
+          )}
         </section>
       </main>
 
@@ -264,7 +364,10 @@ export const Settings = () => {
             <AlertDialogCancel className="bg-muted text-foreground border-none">
               Annulla
             </AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive text-destructive-foreground">
+            <AlertDialogAction 
+              className="bg-destructive text-destructive-foreground"
+              onClick={handleDeleteAll}
+            >
               Elimina tutto
             </AlertDialogAction>
           </AlertDialogFooter>
